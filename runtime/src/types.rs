@@ -1,0 +1,669 @@
+use std::collections::HashMap;
+use std::fmt;
+
+use serde::{Deserialize, Serialize};
+
+use crate::error::{Result, RuntimeError};
+
+/// Opaque identifier for an agent.
+///
+/// Construct with [`ContainerId::try_new`] for user-supplied input (validated).
+/// [`ContainerId::new`] is infallible for internal/test use where input is known-valid.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ContainerId(String);
+
+impl ContainerId {
+    /// Validated constructor for user-supplied input.
+    ///
+    /// Rejects empty strings, characters outside `[A-Za-z0-9_-]`, IDs > 63 chars,
+    /// and IDs that do not start and end with `[A-Za-z0-9]`.
+    /// Returns `RuntimeError::InvalidSpec` on failure.
+    pub fn try_new(id: impl Into<String>) -> Result<Self> {
+        let s: String = id.into();
+        Self::check(&s)?;
+        Ok(ContainerId(s))
+    }
+
+    /// Infallible constructor for internal/test use. Prefer [`try_new`](ContainerId::try_new)
+    /// for user-supplied input.
+    pub fn new(id: impl Into<String>) -> Self {
+        ContainerId(id.into())
+    }
+
+    /// Create a ContainerId from an agent UUID.
+    ///
+    /// UUID v4 always satisfies ContainerId constraints: 36 chars, lowercase hex + hyphens,
+    /// starts and ends with a hex digit. This avoids the `try_new(...).expect(...)` pattern
+    /// at every call site that converts an agent `Uuid` to a container ID.
+    pub fn from_uuid(id: uuid::Uuid) -> Self {
+        ContainerId(id.to_string())
+    }
+
+    /// Borrow the inner string.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Validate this ID's format. Called by [`DeploymentSpec::validate`] and backend
+    /// methods that accept a raw `ContainerId` to prevent label-selector injection.
+    pub fn validate(&self) -> Result<()> {
+        Self::check(&self.0)
+    }
+
+    fn check(s: &str) -> Result<()> {
+        if s.is_empty() {
+            return Err(RuntimeError::InvalidSpec(
+                "container_id must be non-empty".to_owned(),
+            ));
+        }
+        if s.len() > 63 {
+            return Err(RuntimeError::InvalidSpec(
+                "container_id exceeds 63 characters".to_owned(),
+            ));
+        }
+        if !s
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        {
+            return Err(RuntimeError::InvalidSpec(
+                "container_id must contain only [A-Za-z0-9_-]".to_owned(),
+            ));
+        }
+        // K8s label values must begin and end with [A-Za-z0-9]. Enforcing this here
+        // also guarantees object_name() always produces a non-empty sanitized result
+        // after sanitization, superseding the old "at least one alphanumeric" guard.
+        if !s.starts_with(|c: char| c.is_ascii_alphanumeric())
+            || !s.ends_with(|c: char| c.is_ascii_alphanumeric())
+        {
+            return Err(RuntimeError::InvalidSpec(
+                "container_id must start and end with [A-Za-z0-9]".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for ContainerId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl From<String> for ContainerId {
+    /// Infallible. Prefer [`ContainerId::try_new`] for user-supplied input.
+    fn from(s: String) -> Self {
+        ContainerId(s)
+    }
+}
+
+impl From<&str> for ContainerId {
+    fn from(s: &str) -> Self {
+        ContainerId(s.to_owned())
+    }
+}
+
+/// Observed lifecycle state of a deployed agent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeState {
+    /// Agent is being scheduled or starting up.
+    Pending,
+    /// Agent is live and serving requests.
+    Running,
+    /// Agent process crashed or hit a restart-count threshold.
+    Crashed,
+    /// Infrastructure failure: image pull error, invalid image, container config error.
+    Failed,
+    /// Agent was intentionally stopped (scale to 0 or explicit stop).
+    Stopped,
+    /// Backend returned a state this runtime does not recognise.
+    Unknown,
+}
+
+impl fmt::Display for RuntimeState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            RuntimeState::Pending => "pending",
+            RuntimeState::Running => "running",
+            RuntimeState::Crashed => "crashed",
+            RuntimeState::Failed => "failed",
+            RuntimeState::Stopped => "stopped",
+            RuntimeState::Unknown => "unknown",
+        };
+        f.write_str(s)
+    }
+}
+
+/// CPU and memory limits applied to every agent container.
+///
+/// When `None` in [`DeploymentSpec::resources`], both backends apply [`Default`]
+/// values (0.5 CPU / 512 MiB) to prevent runaway agents from starving colocated workloads.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResourceLimits {
+    /// Memory limit in Kubernetes notation (e.g. `"512Mi"`, `"1Gi"`).
+    /// Docker parses `Mi`/`Gi` suffixes; bare integers are treated as bytes.
+    pub memory: String,
+    /// CPU limit in millicores (e.g. `500` = 0.5 CPU).
+    /// K8s: emitted as `"<n>m"`. Docker: `nano_cpus = cpu_milli × 1_000_000`.
+    pub cpu_milli: u32,
+}
+
+impl Default for ResourceLimits {
+    fn default() -> Self {
+        ResourceLimits {
+            memory: "512Mi".to_owned(),
+            cpu_milli: 500,
+        }
+    }
+}
+
+impl ResourceLimits {
+    /// Validate that memory uses a recognized suffix and cpu_milli is non-zero.
+    pub(crate) fn validate(&self) -> Result<()> {
+        if self.cpu_milli == 0 {
+            return Err(RuntimeError::InvalidSpec(
+                "cpu_milli must be > 0".to_owned(),
+            ));
+        }
+        // suffix → multiplier (bytes) used to detect overflow before parse_memory_bytes runs
+        let suffixes: &[(&str, i64)] = &[
+            ("Gi", 1024 * 1024 * 1024),
+            ("Mi", 1024 * 1024),
+            ("G", 1_000_000_000),
+            ("M", 1_000_000),
+        ];
+        let mut recognized = false;
+        for (sfx, multiplier) in suffixes {
+            if let Some(n) = self.memory.strip_suffix(sfx) {
+                if n.is_empty() || !n.chars().all(|c| c.is_ascii_digit()) {
+                    break;
+                }
+                let parsed: i64 = n.parse().map_err(|_| {
+                    RuntimeError::InvalidSpec(format!(
+                        "memory {:?} numeric part is too large",
+                        self.memory
+                    ))
+                })?;
+                if parsed.checked_mul(*multiplier).is_none() {
+                    return Err(RuntimeError::InvalidSpec(format!(
+                        "memory {:?} overflows i64 — maximum is 8191Gi / 8191G",
+                        self.memory
+                    )));
+                }
+                recognized = true;
+                break;
+            }
+        }
+        if !recognized {
+            // bare integer
+            let is_bare =
+                !self.memory.is_empty() && self.memory.chars().all(|c| c.is_ascii_digit());
+            if !is_bare {
+                return Err(RuntimeError::InvalidSpec(format!(
+                    "memory {:?} is not a recognized quantity (e.g. \"512Mi\", \"1Gi\", \"536870912\")",
+                    self.memory
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Full specification for an agent deployment.
+///
+/// The caller constructs this from a build record and passes it to
+/// [`ContainerRuntime::deploy`]. This crate never builds images — `image` must be
+/// a fully-qualified OCI reference to an already-built image.
+///
+/// `min_replicas` is used as the initial replica count at deploy time.
+/// `max_replicas` is stored and returned in status but not enforced here —
+/// autoscaling policy (HPA/KEDA) is the orchestrator's responsibility.
+///
+/// # K8s port convention
+///
+/// The first port in `ports` is exposed as service port 80 on the ClusterIP service.
+/// Additional ports are exposed on their own port numbers. Always call `validate()`
+/// before passing this to a backend — backends call it internally in `deploy()`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeploymentSpec {
+    /// Agent identifier (from the Nasiko registry).
+    pub container_id: ContainerId,
+    /// Human-readable name. Used as `app.kubernetes.io/name` label in K8s manifests
+    /// and as a Docker container label.
+    pub name: String,
+    /// Fully-qualified OCI image URL (e.g. `harbor.nasiko.io/agents/my-agent:v1.0.0`).
+    pub image: String,
+    /// Initial (minimum) replica count. Used as starting replicas at deploy time.
+    pub min_replicas: u32,
+    /// Maximum replica count hint. Not enforced by this crate.
+    pub max_replicas: u32,
+    /// Environment variables injected into every container.
+    pub env_vars: HashMap<String, String>,
+    /// Container port(s). The first port is treated as the primary service port.
+    /// Must not be empty — an empty list is rejected with `RuntimeError::InvalidSpec`.
+    pub ports: Vec<u16>,
+    /// CPU and memory limits. When `None`, defaults to 0.5 CPU / 512 MiB.
+    pub resources: Option<ResourceLimits>,
+    /// Name of a `kubernetes.io/dockerconfigjson` Secret that `imagePullSecrets`
+    /// on the deployed pod spec should reference, so it can authenticate
+    /// pulls from the built-in OCI registry (whose normal bearer-JWT auth
+    /// doesn't fit that Secret shape — see `nasiko-oci`'s `pull_credentials`
+    /// module). `None` when this deploy isn't going through the K8s runtime,
+    /// or the built-in registry's pull-credential mechanism isn't in play.
+    /// Ignored by `DockerRuntime`.
+    pub image_pull_secret_name: Option<String>,
+    /// `(username, plaintext_token, registry_host)` — set ONLY on an agent's
+    /// first-ever deploy, when a pull credential was just minted (see
+    /// `nasiko-oci`'s `pull_credentials::get_or_create`), telling the K8s
+    /// backend to create `image_pull_secret_name`'s Secret with this
+    /// one-time plaintext. `None` on every later deploy of the same agent —
+    /// the Secret from the original mint is still valid, so the backend only
+    /// needs to reference it by name, never recreate it. Ignored by
+    /// `DockerRuntime`.
+    pub image_pull_credential_seed: Option<(String, String, String)>,
+    /// Applies OS-level hardening to the created container: run as a fixed
+    /// non-root uid, read-only root filesystem (with a small writable `/tmp`
+    /// tmpfs), all Linux capabilities dropped, no-new-privileges. Defaults to
+    /// `false` for every existing agent deploy — only the MCP-server-upload
+    /// build path (the first case of the platform running arbitrary
+    /// third-party code that isn't a curated example agent) sets this `true`.
+    /// Ignored by `KubeRuntime`, which already hardens every pod unconditionally.
+    pub harden: bool,
+    /// Overrides the runtime's default network for this one deployment. `None`
+    /// (the default) uses whatever network every other container already
+    /// uses. Only the MCP-server-upload build path sets this, to isolate
+    /// uploaded servers onto a dedicated network. Ignored by `KubeRuntime`
+    /// (namespace-based isolation already applies).
+    pub network_override: Option<String>,
+    /// What kind of workload this is. Read by `KubeRuntime` to select the
+    /// NetworkPolicy variant: agents get an egress rule back to the server
+    /// (A2A hairpin); MCP connectors, which only receive inbound tool calls,
+    /// do not. Defaults to `Agent` for backward compatibility.
+    pub workload_kind: WorkloadKind,
+    /// Mounts a **persistent**, private-per-agent directory at `/workspace`.
+    /// Both backends implement this as one platform-wide shared volume with a
+    /// per-agent subdirectory, keyed by `{owner_id}/{container_id}` — never a
+    /// fresh/ephemeral mount: the same agent redeployed (image bump, secret
+    /// rotation, restart) sees the same `/workspace` contents it left behind. No
+    /// other agent can see into another agent's subdirectory (private by
+    /// default; there is currently no way to opt into a shared view across
+    /// agents). The `owner_id` path segment is an organizational aid (so a raw
+    /// volume listing groups files by owning user) — it is **not** an access
+    /// control boundary: anyone with direct Docker-daemon or PVC access can read
+    /// every agent's subdirectory regardless of nesting. Per-user encryption at
+    /// rest, if ever needed, is a separate, unbuilt feature.
+    ///
+    /// - `DockerRuntime`: a single named Docker volume, mounted via
+    ///   `volume-subpath=<owner_id>/<container_id>` (Docker Engine API v1.45+,
+    ///   exposed by `bollard::models::MountVolumeOptions::subpath`) — the Docker
+    ///   analogue of a Kubernetes `subPath`. Docker does not auto-create that
+    ///   subdirectory (Kubernetes does), so the backend pre-creates it via a
+    ///   short-lived helper container before every deploy.
+    /// - `KubeRuntime`: a single namespace-wide `PersistentVolumeClaim`, mounted
+    ///   with `subPath: <owner_id>/<container_id>` on the pod's `workspace`
+    ///   volume — the directory is created automatically by the kubelet.
+    ///   Requires the cluster's storage class to support the configured access
+    ///   mode across every node an agent pod might land on (default
+    ///   `ReadWriteMany` — see `KubeRuntimeConfig::agent_memory_access_mode`'s
+    ///   doc comment for what that requires of the cluster).
+    ///
+    /// Defaults to `false` for every existing agent deploy.
+    pub writable: bool,
+    /// Container-side mount target for the `writable` volume (`--writable-path`).
+    /// `None` = [`DeploymentSpec::DEFAULT_WRITABLE_PATH`]. Purely where the
+    /// agent *sees* its persistent directory — the volume-side layout stays
+    /// `{owner_id}/{container_id}` regardless, so changing this never moves or
+    /// loses data. Must be an absolute, dedicated state directory: a mount
+    /// **shadows** whatever the image ships at that path (mounting over the
+    /// image's code directory hides the code itself), which is why it is the
+    /// agent author's choice and never inferred from the image. Ignored when
+    /// `writable` is `false`.
+    pub writable_path: Option<String>,
+    /// The agent's owning user (`agents.owner_id`). Used only to namespace the
+    /// `writable` subdirectory path (`{owner_id}/{container_id}`) — see
+    /// `writable`'s doc comment. Not read at all when `writable` is `false`.
+    pub owner_id: uuid::Uuid,
+    /// Force a fresh registry pull even when the daemon already has an image
+    /// with this exact ref cached locally — the difference between "reuse
+    /// what's cached" and "get whatever the tag currently points to right
+    /// now" for a mutable tag like `:latest`. Every existing deploy path
+    /// defaults this to `false` (unchanged behavior: reuse the local cache).
+    /// `DockerRuntime` reads this; `KubeRuntime` does not use it yet.
+    pub force_pull: bool,
+}
+
+/// Validates a `--writable-path` mount target. Both backends consume the path
+/// verbatim (Docker `Mount.target`, K8s `volumeMounts.mountPath`), so reject
+/// anything either would choke on or that could escape/alias: relative paths,
+/// `..` traversal, `:` (illegal in a K8s mountPath), control characters, and
+/// `/` itself (mounting over the entire rootfs). `pub` so the server's upload
+/// handler can reject a bad path at request time (400) instead of surfacing it
+/// later as a failed deploy.
+pub fn validate_writable_path(path: &str) -> std::result::Result<(), String> {
+    let bad = !path.starts_with('/')
+        || path == "/"
+        || path.len() > 255
+        || path.split('/').any(|seg| seg == "..")
+        || path.chars().any(|c| c == ':' || c.is_control());
+    if bad {
+        return Err(format!(
+            "writable_path `{path}` must be an absolute path (not `/`), \
+             without `..` segments, `:` or control characters, ≤255 chars"
+        ));
+    }
+    Ok(())
+}
+
+/// Validates a path *inside* an agent's writable directory, as supplied by a
+/// client asking to download one file. Unlike [`validate_writable_path`] — which
+/// vets an absolute mount target — this vets untrusted user input that is about
+/// to be joined onto the agent's own subdirectory, so it must be relative and
+/// must not be able to climb out of it. `pub` so the server rejects a bad path
+/// at request time (400) rather than handing it to a runtime.
+pub fn validate_workspace_relative_path(path: &str) -> std::result::Result<(), String> {
+    let bad = path.is_empty()
+        || path.starts_with('/')
+        || path.len() > 255
+        // `..` anywhere, and a bare `.`, would resolve outside (or alias) the
+        // agent's subdirectory once joined.
+        || path.split('/').any(|seg| seg == ".." || seg == "." || seg.is_empty())
+        || path.chars().any(|c| c == ':' || c == '\\' || c.is_control());
+    if bad {
+        return Err(format!(
+            "path `{path}` must be relative to the agent's writable directory, \
+             without `.`/`..` or empty segments, `:`, `\\` or control characters, ≤255 chars"
+        ));
+    }
+    Ok(())
+}
+
+/// Shell body (run as `sh -c <script> _ <agent_dir> <rel_path>`) that resolves
+/// the requested file, proves it stays inside `agent_dir` (the agent's own
+/// subdirectory, the containment fence) after every symlink is followed, and
+/// prints its size. `$1` is that directory, `$2` the caller's
+/// already-[`validate_workspace_relative_path`]d relative path.
+///
+/// The containment re-check has to live in the reader even though the server
+/// validated `rel_path`: the reader mounts the volume read-only, but the agent
+/// has read-write access to the same bytes through its own mount and can swap a
+/// symlink in at any moment, so a lexical server-side check alone is not enough
+/// — the bytes about to be read must be re-proven inside the agent's own
+/// subtree. `scope_dir` is trusted (the runtime builds it from validated
+/// components); only the resolved file is checked against it.
+pub const WORKSPACE_STAT_SCRIPT: &str = "t=$(readlink -f \"$1/$2\") || exit 1; \
+case \"$t\" in \"$1\"/*) ;; *) exit 1;; esac; \
+[ -f \"$t\" ] && stat -c '%s' \"$t\"";
+
+/// Companion to [`WORKSPACE_STAT_SCRIPT`] that streams the file rather than
+/// sizing it, applying the identical resolve-and-contain check in the same
+/// shell as the `cat` (so a symlink swapped in after the stat still cannot
+/// escape). Writes to stderr on every rejection so a stderr-sensitive caller
+/// (`DockerRuntime`'s `exec_stream`) surfaces it as an error instead of an
+/// empty body.
+pub const WORKSPACE_CAT_SCRIPT: &str = "t=$(readlink -f \"$1/$2\") || \
+{ echo 'no such file' >&2; exit 1; }; \
+case \"$t\" in \"$1\"/*) ;; *) echo 'path escapes workspace' >&2; exit 1;; esac; \
+[ -f \"$t\" ] || { echo 'not a regular file' >&2; exit 1; }; \
+exec cat \"$t\"";
+
+/// Shell body (run as `sh -c <script> _ <agent_dir>`) that prepares a
+/// `--writable` agent's directory: create it and hand it to uid 65534 (the uid
+/// such agents run as) so the agent can write to `/workspace`. Idempotent; runs
+/// on container (re)creation for Docker and on every pod start for Kubernetes.
+///
+/// Per-user isolation is no longer a filesystem concern here: the server
+/// captures each turn's writes onto the assistant message, session-scoped, so
+/// there is no root-owned `u/` parent to
+/// build.
+///
+/// Shared verbatim by `DockerRuntime`'s init helper and `KubeRuntime`'s writable
+/// initContainer (both run as root with the default capability set, which
+/// includes the `CHOWN` this step needs) so the two never drift.
+pub const WORKSPACE_SETUP_SCRIPT: &str = "set -e; mkdir -p \"$1\"; \
+[ \"$(stat -c %u \"$1\")\" = 65534 ] || chown -R 65534:65534 \"$1\"";
+
+/// Shell body (`sh -c <script> _ <dir>`) that lists the regular files under
+/// `$1` as `<size> <path>` lines. **Hidden files and directories are pruned**:
+/// a dotfile under `/workspace` is an agent's own internal state — an opencode
+/// HOME (`.cache`/`.config`/`.local`), a `.git`, an editor's scratch — not a
+/// user-facing deliverable, and one such agent can otherwise bury the actual
+/// output under thousands of cache files. A hidden file is still downloadable by
+/// explicit path (the download path does not filter); it just isn't offered in
+/// the listing. Pruning (not merely filtering) also skips descending those
+/// trees, so a listing stays fast on a large HOME.
+///
+/// The `stat` runs behind `sh -c '… 2>/dev/null || true'` so a file removed
+/// mid-walk (a coding agent churning temp files right as capture runs) is
+/// silently dropped from the listing instead of making the whole `find` exit
+/// non-zero — which the exec wrappers treat as a hard error, losing every chip.
+/// `find`'s *own* traversal errors (an unreadable subdir) still propagate.
+pub const WORKSPACE_LIST_SCRIPT: &str = "[ -d \"$1\" ] || exit 0; find \"$1\" -name '.*' -prune -o -type f -exec sh -c 'stat -c \"%Y %s %n\" \"$@\" 2>/dev/null || true' _ {} +";
+
+/// Identifies one agent's subdirectory of the shared agent-memory volume — the
+/// `{owner_id}/{container_id}` layout described on [`DeploymentSpec::writable`].
+///
+/// A [`ContainerId`] alone is not enough: the volume-side path is owner-scoped,
+/// and the runtime has no way to look the owner up.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceRef {
+    pub owner_id: uuid::Uuid,
+    pub container_id: ContainerId,
+}
+
+impl WorkspaceRef {
+    /// The agent's own subdirectory relative to the volume root
+    /// (`{owner_id}/{container_id}`) — the directory backends `find` in and the
+    /// fence they contain reads to. Must match whatever each backend mounts.
+    pub fn subpath(&self) -> String {
+        format!("{}/{}", self.owner_id, self.container_id.as_str())
+    }
+}
+
+/// One file in an agent's writable directory, as reported by
+/// [`crate::ContainerRuntime::list_workspace`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceEntry {
+    /// Path relative to the agent's writable directory, e.g. `notes/todo.md`.
+    /// This is exactly what `read_workspace_file` expects back.
+    pub path: String,
+    pub size: u64,
+    /// Unix mtime in seconds, from the preceding `stat`. Advisory metadata (e.g.
+    /// recency); the file-capture path attributes by the agent's reply, not time.
+    pub mtime: i64,
+}
+
+/// A single file streamed out of an agent's writable directory.
+///
+/// Deliberately a stream rather than a `Vec<u8>`: the backing volume is
+/// typically 20Gi, and buffering whole files would make N concurrent downloads
+/// an N-times-file-size memory spike on the control plane.
+pub struct WorkspaceFile {
+    /// Byte length as of the preceding stat, for `Content-Length`. Advisory —
+    /// a file rewritten mid-read can make the stream disagree.
+    pub size: u64,
+    pub stream: futures_util::stream::BoxStream<'static, crate::Result<bytes::Bytes>>,
+}
+
+impl std::fmt::Debug for WorkspaceFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WorkspaceFile")
+            .field("size", &self.size)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Distinguishes agent deployments from MCP connector deployments so that
+/// `KubeRuntime` can apply a tighter NetworkPolicy to connectors (no
+/// A2A-hairpin egress).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WorkloadKind {
+    #[default]
+    Agent,
+    McpConnector,
+}
+
+impl DeploymentSpec {
+    /// Where the `writable` volume lands in the container when
+    /// [`DeploymentSpec::writable_path`] is unset.
+    pub const DEFAULT_WRITABLE_PATH: &'static str = "/workspace";
+
+    /// The effective container-side mount target for the `writable` volume.
+    pub fn writable_mount_path(&self) -> &str {
+        self.writable_path
+            .as_deref()
+            .unwrap_or(Self::DEFAULT_WRITABLE_PATH)
+    }
+
+    /// Validate the spec before handing it to a backend.
+    ///
+    /// Called automatically by both backend `deploy()` implementations; callers
+    /// may also call this eagerly to surface errors before the async call.
+    pub fn validate(&self) -> Result<()> {
+        self.container_id.validate()?;
+        if let Some(path) = &self.writable_path
+            && let Err(e) = validate_writable_path(path)
+        {
+            return Err(RuntimeError::InvalidSpec(e));
+        }
+        if self.image.is_empty() {
+            return Err(RuntimeError::InvalidSpec(
+                "image must not be empty".to_owned(),
+            ));
+        }
+        if self.ports.is_empty() {
+            return Err(RuntimeError::InvalidSpec(
+                "ports must not be empty".to_owned(),
+            ));
+        }
+        for &port in &self.ports {
+            if port == 0 {
+                return Err(RuntimeError::InvalidSpec(
+                    "port 0 is not a valid container port".to_owned(),
+                ));
+            }
+        }
+        if self.min_replicas == 0 {
+            return Err(RuntimeError::InvalidSpec(
+                "min_replicas must be at least 1 — use scale(0) to stop a running agent".to_owned(),
+            ));
+        }
+        if self.min_replicas > self.max_replicas {
+            return Err(RuntimeError::InvalidSpec(
+                "min_replicas must not exceed max_replicas".to_owned(),
+            ));
+        }
+        if self.name.is_empty() {
+            return Err(RuntimeError::InvalidSpec(
+                "name must not be empty".to_owned(),
+            ));
+        }
+        if self.name.len() > 63 {
+            return Err(RuntimeError::InvalidSpec(
+                "name exceeds 63 characters".to_owned(),
+            ));
+        }
+        let valid_label_char =
+            |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.';
+        if !self.name.chars().all(valid_label_char)
+            || !self.name.starts_with(|c: char| c.is_ascii_alphanumeric())
+            || !self.name.ends_with(|c: char| c.is_ascii_alphanumeric())
+        {
+            return Err(RuntimeError::InvalidSpec(
+                "name must start/end with [A-Za-z0-9] and contain only [-A-Za-z0-9_.]".to_owned(),
+            ));
+        }
+        if let Some(ref r) = self.resources {
+            r.validate()?;
+        }
+        for (key, value) in &self.env_vars {
+            if key.is_empty() || !key.chars().all(|c| c != '=' && c.is_ascii_graphic()) {
+                return Err(RuntimeError::InvalidSpec(format!(
+                    "env var key {:?} contains invalid characters (= or non-printable)",
+                    key
+                )));
+            }
+            if value.chars().any(|c| c.is_ascii_control()) {
+                return Err(RuntimeError::InvalidSpec(format!(
+                    "env var value for key {:?} contains control characters",
+                    key
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Observed state of a running (or stopped) agent deployment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeploymentStatus {
+    /// Agent identifier.
+    pub container_id: ContainerId,
+    /// Current lifecycle state.
+    pub state: RuntimeState,
+    /// Number of replicas that are currently live and ready.
+    pub replicas_live: u32,
+    /// Reachable address, if the agent is running and addressable.
+    pub endpoint: Option<String>,
+    /// Human-readable message: crash reason, pull error, or general info.
+    pub message: Option<String>,
+    /// Cumulative container restart count (K8s only; 0 for Docker).
+    pub restart_count: u32,
+}
+
+/// One live container instance (Docker container / Kubernetes pod) of an agent.
+///
+/// Consumed by the container-hours meter: `(instance_key, started_at)` uniquely
+/// identifies one physical run, so a backend that reuses instance identities
+/// across restarts (Docker restarts keep the container ID but reset
+/// `StartedAt`) still yields one entry per run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstanceInfo {
+    /// Agent identifier this instance belongs to (same value `deploy()` received).
+    pub container_id: ContainerId,
+    /// Per-run identity within the backend: Docker container ID (64-hex),
+    /// Kubernetes pod UID.
+    pub instance_key: String,
+    /// True start time reported by the runtime. `None` when the backend cannot
+    /// report one — callers fall back to first-observation time.
+    pub started_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Whether the instance is ready/serving (K8s readiness; Docker: running).
+    pub ready: bool,
+}
+
+/// Validate inputs to [`ContainerRuntime::build`] before any backend call.
+///
+/// Called at the top of every backend's `build()` implementation, matching
+/// the pattern of `spec.validate()` in `deploy()` and `container_id.validate()`
+/// in all other methods.
+pub fn validate_build_inputs(tar_context: &[u8], image_tag: &str) -> Result<()> {
+    if tar_context.is_empty() {
+        return Err(RuntimeError::InvalidSpec(
+            "tar_context must not be empty".to_owned(),
+        ));
+    }
+    const MAX_TAR_BYTES: usize = 500 * 1024 * 1024; // 500 MiB
+    if tar_context.len() > MAX_TAR_BYTES {
+        return Err(RuntimeError::InvalidSpec(format!(
+            "tar_context size {} exceeds maximum {} bytes (500 MiB)",
+            tar_context.len(),
+            MAX_TAR_BYTES,
+        )));
+    }
+    if image_tag.is_empty() {
+        return Err(RuntimeError::InvalidSpec(
+            "image_tag must not be empty".to_owned(),
+        ));
+    }
+    // Reject characters that could inject key=value pairs into buildctl --output spec.
+    if !image_tag
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/' | ':' | '@'))
+    {
+        return Err(RuntimeError::InvalidSpec(format!(
+            "image_tag {:?} contains invalid characters — only [A-Za-z0-9._-/:@] are allowed",
+            image_tag,
+        )));
+    }
+    Ok(())
+}

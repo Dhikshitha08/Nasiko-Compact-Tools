@@ -1,0 +1,34 @@
+[package]
+name = "nasiko-runtime"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+async-trait = "0.1"
+thiserror = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+
+# `bytes` is unconditional: the `BlobStore` trait's payloads are `Bytes`, and
+# the trait must exist for every feature combination (the k8s runtime builds
+# this crate without `docker`). `futures-util` is likewise unconditional now
+# that `WorkspaceFile` puts a byte stream in the public API.
+bytes = { workspace = true }
+futures-util = { version = "0.3" }
+
+# docker feature
+bollard = { version = "0.17", optional = true }
+serde_json = { workspace = true, optional = true }
+
+[features]
+default = ["docker"]
+docker = ["dep:bollard", "dep:serde_json"]
+simulated = []
+
+[dev-dependencies]
+serde_json = { workspace = true }
+uuid = { workspace = true }

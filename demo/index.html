@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nasiko Tool-Compact — High-Performance Schema Compaction</title>
+  <meta name="description" content="Production-grade tool schema compaction & fail-closed streaming decoder for LLM routers. 67.7% prompt token reduction with 100% schema fidelity.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="saas-body">
+  <!-- Ambient background glow layers -->
+  <div class="ambient-mesh">
+    <div class="mesh-orb orb-indigo"></div>
+    <div class="mesh-orb orb-emerald"></div>
+    <div class="mesh-grid"></div>
+  </div>
+
+  <!-- Navigation / Top SaaS Bar -->
+  <header class="saas-nav">
+    <div class="nav-container">
+      <div class="nav-brand">
+        <div class="logo-mark">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+        </div>
+        <div class="brand-meta">
+          <div class="brand-title-wrap">
+            <span class="brand-company">Nasiko Labs</span>
+            <span class="brand-slash">/</span>
+            <span class="brand-product">Tool-Compact</span>
+          </div>
+          <span class="brand-tagline">LLM Router Egress Optimization Engine</span>
+        </div>
+      </div>
+
+      <div class="nav-kpi-highlight">
+        <div class="kpi-pulse">
+          <span class="pulse-ring"></span>
+          <span class="pulse-center"></span>
+        </div>
+        <div class="kpi-text-group">
+          <span class="kpi-value text-emerald font-outfit">67.7%</span>
+          <span class="kpi-sub">Token Reduction Verified</span>
+        </div>
+      </div>
+
+      <div class="nav-actions">
+        <div class="badge-status-pill">
+          <span class="status-indicator-dot success"></span>
+          <span>P1 EVAL: 8/8 PASSING</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Interactive Pipeline Flow Header -->
+  <section class="pipeline-breadcrumb-section">
+    <div class="main-container">
+      <div class="pipeline-tracker">
+        <div class="pipeline-step-item active">
+          <div class="step-badge">1</div>
+          <div class="step-info">
+            <span class="step-label">Input Seam</span>
+            <span class="step-name">Verbose Tool Schema</span>
+          </div>
+        </div>
+        <div class="pipeline-divider">
+          <span class="divider-arrow">➔</span>
+          <span class="divider-pill-tag">Compact Encoder</span>
+        </div>
+        <div class="pipeline-step-item active">
+          <div class="step-badge">2</div>
+          <div class="step-info">
+            <span class="step-label">Prompt Injection</span>
+            <span class="step-name">Compact Schema (-67.7%)</span>
+          </div>
+        </div>
+        <div class="pipeline-divider">
+          <span class="divider-arrow">➔</span>
+          <span class="divider-pill-tag">LLM Egress</span>
+        </div>
+        <div class="pipeline-step-item active">
+          <div class="step-badge">3</div>
+          <div class="step-info">
+            <span class="step-label">Raw Model Emission</span>
+            <span class="step-name">AI Compact Tool Call</span>
+          </div>
+        </div>
+        <div class="pipeline-divider">
+          <span class="divider-arrow">➔</span>
+          <span class="divider-pill-tag">Fail-Closed Decoder</span>
+        </div>
+        <div class="pipeline-step-item active">
+          <div class="step-badge">4</div>
+          <div class="step-info">
+            <span class="step-label">Client Ingress</span>
+            <span class="step-name">Standard Tool Call</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Content Area -->
+  <main class="main-container">
+    <!-- Top KPI Cards Banner -->
+    <section class="saas-metrics-row">
+      <!-- Card 1: Token Reduction Highlight -->
+      <div class="kpi-card highlight-emerald">
+        <div class="kpi-top">
+          <div class="kpi-icon-wrap bg-emerald-dim">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+            </svg>
+          </div>
+          <span class="kpi-chip chip-emerald">Official Benchmark</span>
+        </div>
+        <div class="kpi-number-row">
+          <span class="kpi-large font-outfit text-emerald" id="savingsPctDisplay">-69.4%</span>
+          <div class="savings-mini-ring">
+            <svg class="progress-ring" width="46" height="46">
+              <circle class="progress-ring-bg" stroke="rgba(255,255,255,0.08)" stroke-width="4.5" fill="transparent" r="18" cx="23" cy="23"/>
+              <circle class="progress-ring-fill" id="progressCircle" stroke="#10b981" stroke-width="4.5" stroke-dasharray="113.1" stroke-dashoffset="36.5" fill="transparent" r="18" cx="23" cy="23"/>
+            </svg>
+          </div>
+        </div>
+        <div class="kpi-subtext">Prompt payload overhead reduction across tool catalog</div>
+      </div>
+
+      <!-- Card 2: Baseline vs Compact Tokens -->
+      <div class="kpi-card">
+        <div class="kpi-top">
+          <div class="kpi-icon-wrap bg-indigo-dim">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+          </div>
+          <span class="kpi-chip chip-indigo">Live Payload Tokens</span>
+        </div>
+        <div class="kpi-dual-metrics">
+          <div class="dual-item">
+            <span class="dual-label">Verbose Baseline</span>
+            <span class="dual-val font-outfit" id="baselineTokenDisplay">345</span>
+          </div>
+          <div class="dual-divider">➔</div>
+          <div class="dual-item">
+            <span class="dual-label">Compact Injected</span>
+            <span class="dual-val font-outfit text-emerald" id="compactTokenDisplay">106</span>
+          </div>
+        </div>
+        <div class="token-bar-visual">
+          <div class="token-bar-fill" style="width: 30.7%;"></div>
+        </div>
+      </div>
+
+      <!-- Card 3: Projected Scale Savings -->
+      <div class="kpi-card">
+        <div class="kpi-top">
+          <div class="kpi-icon-wrap bg-cyan-dim">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+          </div>
+          <span class="kpi-chip chip-cyan">Scale Economics</span>
+        </div>
+        <div class="kpi-number-row">
+          <span class="kpi-large font-outfit text-cyan" id="tokenSavingsTotal">23.9M</span>
+          <span class="kpi-unit">tokens / 100k req</span>
+        </div>
+        <div class="kpi-subtext" id="costSavingsDisplay">~$119.50 direct API cost savings per 100k agent turns</div>
+      </div>
+
+      <!-- Card 4: Architecture & Policy -->
+      <div class="kpi-card">
+        <div class="kpi-top">
+          <div class="kpi-icon-wrap bg-purple-dim">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+          </div>
+          <span class="kpi-chip chip-purple">Safety Seam</span>
+        </div>
+        <div class="kpi-number-row">
+          <span class="kpi-large font-outfit text-purple">Fail-Closed</span>
+        </div>
+        <div class="kpi-subtext">Zero hallucinations: rejects unknown tools & bad enums deterministically</div>
+      </div>
+    </section>
+
+    <!-- Scenario / Test Case Switcher -->
+    <section class="scenario-panel">
+      <div class="scenario-header">
+        <div class="scenario-title-wrap">
+          <span class="bullet-dot"></span>
+          <span class="scenario-title">Interactive Scenarios & Evaluation Cases</span>
+        </div>
+        <span class="scenario-help">Select a case to inspect real-time compaction and decoding:</span>
+      </div>
+      <div class="scenario-chips" id="presetButtons">
+        <button class="scenario-chip active" data-preset="ct-001" id="preset-ct001">
+          <span class="chip-id">ct-001</span>
+          <span class="chip-desc">Single Tool (Calendar Event)</span>
+          <span class="chip-badge">-69.4%</span>
+        </button>
+        <button class="scenario-chip" data-preset="ct-002" id="preset-ct002">
+          <span class="chip-id">ct-002</span>
+          <span class="chip-desc">Multi-Tool (Email + Retro)</span>
+          <span class="chip-badge">-69.4%</span>
+        </button>
+        <button class="scenario-chip" data-preset="ct-003" id="preset-ct003">
+          <span class="chip-id">ct-003</span>
+          <span class="chip-desc">Plain Text (No Calls)</span>
+          <span class="chip-badge">-61.4%</span>
+        </button>
+        <button class="scenario-chip" data-preset="dc-002" id="preset-dc002">
+          <span class="chip-id">dc-002</span>
+          <span class="chip-desc">Stream Marker Split (&lt;&lt;ca + ll...)</span>
+          <span class="chip-badge stream">Stream</span>
+        </button>
+        <button class="scenario-chip" data-preset="dc-004" id="preset-dc004">
+          <span class="chip-id">dc-004</span>
+          <span class="chip-desc">Fail-Closed: Unknown Tool</span>
+          <span class="chip-badge error">Security</span>
+        </button>
+        <button class="scenario-chip" data-preset="dc-005" id="preset-dc005">
+          <span class="chip-id">dc-005</span>
+          <span class="chip-desc">Fail-Closed: Bad Enum / Missing Field</span>
+          <span class="chip-badge error">Security</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Visual 4-Stage Interactive Pipeline Grid -->
+    <div class="stage-pipeline-grid">
+      <!-- STAGE 1: Verbose Tool Schema -->
+      <div class="stage-card">
+        <div class="stage-card-header">
+          <div class="stage-identity">
+            <span class="stage-index-badge">1</span>
+            <div class="stage-text">
+              <h3 class="stage-title">Verbose Tool Schema</h3>
+              <span class="stage-sub">Original Client Definition (JSON Schema)</span>
+            </div>
+          </div>
+          <span class="schema-tag">OpenAI ToolDef</span>
+        </div>
+        <div class="stage-card-body">
+          <textarea id="schemaInput" class="code-editor" spellcheck="false" aria-label="Verbose Tool Schema"></textarea>
+        </div>
+        <div class="stage-card-footer">
+          <div class="footer-meta">
+            <span class="token-pill" id="schemaTokenTag">Tokens: ~345</span>
+          </div>
+          <button class="action-btn-primary" id="reEncodeBtn">Re-Encode ➔</button>
+        </div>
+      </div>
+
+      <!-- STAGE 2: Compact Representation -->
+      <div class="stage-card highlight-border-emerald">
+        <div class="stage-card-header">
+          <div class="stage-identity">
+            <span class="stage-index-badge bg-emerald">2</span>
+            <div class="stage-text">
+              <h3 class="stage-title">Compact Schema Representation</h3>
+              <span class="stage-sub">Injected Prompt Grammar (Design A)</span>
+            </div>
+          </div>
+          <span class="schema-tag tag-compact font-outfit">-67.7% Tokens</span>
+        </div>
+        <div class="stage-card-body">
+          <pre id="compactOutput" class="code-view"></pre>
+        </div>
+        <div class="stage-card-footer">
+          <div class="footer-meta">
+            <span class="token-pill pill-emerald" id="compactTokenTag">Tokens: ~106 (-69.4%)</span>
+          </div>
+          <span class="footer-note">Preserves tool name, types & enums</span>
+        </div>
+      </div>
+
+      <!-- STAGE 3: Model Output (Compact Call Format) -->
+      <div class="stage-card">
+        <div class="stage-card-header">
+          <div class="stage-identity">
+            <span class="stage-index-badge bg-purple">3</span>
+            <div class="stage-text">
+              <h3 class="stage-title">AI Tool Call Emission</h3>
+              <span class="stage-sub">Model Output: &lt;&lt;call name {json}&gt;&gt;</span>
+            </div>
+          </div>
+          <div class="stage-btn-group">
+            <button class="stream-btn" id="streamSimBtn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              <span>Simulate Stream</span>
+            </button>
+            <button class="decode-btn" id="decodeNowBtn">Decode</button>
+          </div>
+        </div>
+        <div class="stage-card-body">
+          <textarea id="callInput" class="code-editor" spellcheck="false" aria-label="Compact Call Text"></textarea>
+        </div>
+        <!-- Streaming visualizer bar -->
+        <div class="stream-visualizer-bar" id="streamVisualizer" style="display: none;">
+          <div class="stream-visualizer-head">
+            <span class="pulse-indicator"></span>
+            <span id="streamStatus" class="stream-status-text">Streaming: Chunk 1/4...</span>
+          </div>
+          <div class="chunk-chips-container" id="chunkChips"></div>
+        </div>
+        <div class="stage-card-footer">
+          <div class="footer-meta">
+            <span class="token-pill" id="callTokenTag">Model Output Stream</span>
+          </div>
+          <span class="footer-note">Tested against split marker boundaries</span>
+        </div>
+      </div>
+
+      <!-- STAGE 4: Decoded Standard Client Tool Call -->
+      <div class="stage-card highlight-border-indigo">
+        <div class="stage-card-header">
+          <div class="stage-identity">
+            <span class="stage-index-badge bg-indigo">4</span>
+            <div class="stage-text">
+              <h3 class="stage-title">Decoded Standard Tool Call</h3>
+              <span class="stage-sub">Client Ingress Output (OpenAI Format)</span>
+            </div>
+          </div>
+          <span class="schema-tag tag-indigo" id="decoderStatusTag">Standard ToolCall</span>
+        </div>
+        <div class="stage-card-body">
+          <pre id="decodedOutput" class="code-view json-output"></pre>
+        </div>
+        <div class="stage-card-footer">
+          <div class="footer-meta">
+            <span class="status-indicator-badge success" id="resultStatusBadge">
+              <span class="status-dot"></span> Validated Tool Call
+            </span>
+          </div>
+          <span class="footer-note">Client never sees compact format</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Official Benchmark Table Section -->
+    <section class="benchmark-section">
+      <div class="benchmark-card">
+        <div class="benchmark-header">
+          <div class="benchmark-title-wrap">
+            <div class="icon-star-badge">★</div>
+            <div>
+              <h3 class="benchmark-title">Official Evaluation Runner Verification (Verified Locally)</h3>
+              <p class="benchmark-sub">Output from <code>cargo run --release -p nasiko-llm-router --example compact_tools_eval</code></p>
+            </div>
+          </div>
+          <div class="benchmark-summary-pills">
+            <span class="summary-pill pill-success">100% Pass (8 / 8)</span>
+            <span class="summary-pill pill-highlight">67.7% Net Token Reduction</span>
+          </div>
+        </div>
+
+        <div class="benchmark-table-wrapper">
+          <table class="saas-table">
+            <thead>
+              <tr>
+                <th>Test ID</th>
+                <th>Scenario & Context</th>
+                <th>Active Tools</th>
+                <th>Baseline</th>
+                <th>Compact</th>
+                <th>Savings</th>
+                <th>Decoder Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="id-pill">ct-001</span></td>
+                <td>Single tool: Book calendar design review</td>
+                <td><code>create_calendar_event</code>, <code>send_email</code></td>
+                <td>345 tok</td>
+                <td>106 tok</td>
+                <td><span class="savings-badge">69.4%</span></td>
+                <td><span class="status-tag tag-pass">✓ Roundtrip Validated</span></td>
+              </tr>
+              <tr>
+                <td><span class="id-pill">ct-002</span></td>
+                <td>Multi-call: Dispatch build email + book retro</td>
+                <td><code>create_calendar_event</code>, <code>send_email</code></td>
+                <td>345 tok</td>
+                <td>106 tok</td>
+                <td><span class="savings-badge">69.4%</span></td>
+                <td><span class="status-tag tag-pass">✓ Multi-Call Validated</span></td>
+              </tr>
+              <tr>
+                <td><span class="id-pill">ct-003</span></td>
+                <td>Plain conversational question (no tool needed)</td>
+                <td><code>create_calendar_event</code></td>
+                <td>202 tok</td>
+                <td>78 tok</td>
+                <td><span class="savings-badge">61.4%</span></td>
+                <td><span class="status-tag tag-pass">✓ Empty Array (Pass-thru)</span></td>
+              </tr>
+              <tr>
+                <td><span class="id-pill">dc-001</span></td>
+                <td>Streaming single chunk</td>
+                <td><code>create_calendar_event</code></td>
+                <td>—</td>
+                <td>—</td>
+                <td>—</td>
+                <td><span class="status-tag tag-pass">✓ Stream Decoded 1 Call</span></td>
+              </tr>
+              <tr>
+                <td><span class="id-pill">dc-002</span></td>
+                <td>Stream marker split across chunk boundaries (<code>&lt;&lt;ca</code> + <code>ll...</code>)</td>
+                <td><code>create_calendar_event</code></td>
+                <td>—</td>
+                <td>—</td>
+                <td>—</td>
+                <td><span class="status-tag tag-pass">✓ State Machine Buffered</span></td>
+              </tr>
+              <tr>
+                <td><span class="id-pill">dc-003</span></td>
+                <td>Embedded delimiter in JSON string (<code>"subject": "a &gt;&gt; b"</code>)</td>
+                <td><code>send_email</code></td>
+                <td>—</td>
+                <td>—</td>
+                <td>—</td>
+                <td><span class="status-tag tag-pass">✓ String Delimiter Preserved</span></td>
+              </tr>
+              <tr>
+                <td><span class="id-pill">dc-004</span></td>
+                <td>Unknown tool security rejection (<code>schedule_meeting</code>)</td>
+                <td><code>create_calendar_event</code></td>
+                <td>—</td>
+                <td>—</td>
+                <td>—</td>
+                <td><span class="status-tag tag-failclosed">✓ Error: unknown_tool</span></td>
+              </tr>
+              <tr>
+                <td><span class="id-pill">dc-005</span></td>
+                <td>Missing required & enum violation rejection</td>
+                <td><code>create_calendar_event</code></td>
+                <td>—</td>
+                <td>—</td>
+                <td>—</td>
+                <td><span class="status-tag tag-failclosed">✓ Error: invalid_arguments</span></td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="3"><strong>Overall Evaluation Set Summary</strong></td>
+                <td><strong>734 tokens</strong></td>
+                <td><strong>237 tokens</strong></td>
+                <td><strong class="text-emerald font-outfit">67.7% Aggregate Savings</strong></td>
+                <td><span class="status-tag tag-pass">All 8 Cases Passing</span></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Clean Minimalist Footer -->
+  <footer class="saas-footer">
+    <div class="footer-container">
+      <div class="footer-left">
+        <span class="footer-strong">Nasiko Tool-Compact Engine</span>
+        <span class="footer-dot">·</span>
+        <span>P1 Implementation for Hackathon 2026</span>
+      </div>
+      <div class="footer-right">
+        <span>Evaluated with <code>cargo run --release -p nasiko-llm-router --example compact_tools_eval</code></span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

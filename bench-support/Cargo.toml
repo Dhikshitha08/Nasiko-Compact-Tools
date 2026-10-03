@@ -1,0 +1,28 @@
+[package]
+name = "nasiko-bench-support"
+edition.workspace = true
+version.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "mock-llm"
+path = "src/bin/mock_llm.rs"
+
+[dependencies]
+nasiko-config = { workspace = true }
+nasiko-auth = { workspace = true }
+nasiko-runtime = { workspace = true, features = ["simulated"] }
+nasiko-server = { workspace = true }
+# For `S3Storage` — the bench harness builds the same object store the OSS
+# composition root does, since `AppState` now receives it.
+nasiko-oci = { workspace = true }
+tokio = { workspace = true }
+axum = { workspace = true }
+sqlx = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
